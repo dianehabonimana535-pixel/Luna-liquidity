@@ -173,7 +173,7 @@ export default function PortfolioView() {
                       </p>
                       {p.snapshotError ? (
                         <div>
-                          <p className="max-w-[220px] truncate text-xs text-rose-400" title={p.snapshotError}>
+                          <p className="whitespace-normal break-words text-xs text-rose-400">
                             Couldn't load value: {p.snapshotError}
                           </p>
                           <button
