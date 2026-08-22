@@ -476,17 +476,35 @@ export async function getPoolSnapshot(
   connection: Connection,
   poolId: string
 ): Promise<PoolSnapshot> {
-  const raydium = await loadRaydium(wallet, connection);
-  const { poolInfo } = await raydium.cpmm.getPoolInfoFromRpc(poolId);
+  let raydium;
+  try {
+    raydium = await loadRaydium(wallet, connection);
+  } catch (err: any) {
+    throw new Error(`[step 1/4 loadRaydium] ${err?.message || err}`);
+  }
+
+  let poolInfo: any;
+  try {
+    const res = await raydium.cpmm.getPoolInfoFromRpc(poolId);
+    poolInfo = res.poolInfo;
+  } catch (err: any) {
+    throw new Error(`[step 2/4 getPoolInfoFromRpc] ${err?.message || err}`);
+  }
   const info: any = poolInfo;
 
   const baseReserve = Number(info.mintAmountA ?? 0);
   const quoteReserve = Number(info.mintAmountB ?? 0);
   const lpSupply = new BN(Math.round(Number(info.lpAmount ?? 0) * 10 ** (info.lpMint?.decimals ?? 9)).toString());
 
-  const { tokenAccounts } = await raydium.account.fetchWalletTokenAccounts();
+  let tokenAccounts;
+  try {
+    const res = await raydium.account.fetchWalletTokenAccounts();
+    tokenAccounts = res.tokenAccounts;
+  } catch (err: any) {
+    throw new Error(`[step 3/4 fetchWalletTokenAccounts] ${err?.message || err}`);
+  }
   const lpMintAddress = info.lpMint?.address;
-  const lpAccount = tokenAccounts.find((acc) => acc.mint.toBase58() === lpMintAddress);
+  const lpAccount = tokenAccounts.find((acc: any) => acc.mint.toBase58() === lpMintAddress);
   const userLpAmount = lpAccount?.amount ?? new BN(0);
 
   const lpSupplyNum = Number(lpSupply.toString());
