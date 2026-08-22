@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Moon, Droplets, Waves } from "lucide-react";
+import { Moon, Droplets, Waves, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const WalletMultiButtonDynamic = dynamic(
@@ -15,6 +15,7 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/create-pool", label: "Create Pool" },
   { href: "/manage", label: "Manage Liquidity" },
+  { href: "/portfolio", label: "Portfolio" },
 ];
 
 export default function Navbar() {
@@ -40,6 +41,7 @@ export default function Navbar() {
             >
               {link.label === "Create Pool" && <Droplets className="h-3.5 w-3.5" />}
               {link.label === "Manage Liquidity" && <Waves className="h-3.5 w-3.5" />}
+              {link.label === "Portfolio" && <LayoutDashboard className="h-3.5 w-3.5" />}
               {link.label}
             </Link>
           ))}

@@ -13,12 +13,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import {
   createPool,
   fetchFeeTiers,
+  fetchTokenImage,
+  fetchTokenMetadata,
   formatFeeTierPercent,
+  getTokenBalance,
   NATIVE_SOL_MINT,
   USDC_MINT,
   type FeeTierOption,
 } from "@/lib/raydium";
 import { solscanAddressUrl } from "@/lib/network";
+import { recordPoolCreated } from "@/lib/portfolio";
 import { cn, shortenAddress } from "@/lib/utils";
 
 type QuotePreset = "SOL" | "USDC" | "custom";
@@ -35,13 +39,26 @@ export default function CreatePoolForm() {
   const [poolTypeConfirmed, setPoolTypeConfirmed] = useState(false);
 
   const [baseMint, setBaseMint] = useState("");
+  const [baseSymbol, setBaseSymbol] = useState("");
   const [baseDecimals, setBaseDecimals] = useState("9");
   const [baseAmount, setBaseAmount] = useState("");
+  const [baseBalance, setBaseBalance] = useState(0);
+  const [symbolEditedManually, setSymbolEditedManually] = useState(false);
+  const [decimalsEditedManually, setDecimalsEditedManually] = useState(false);
+  const [detectingToken, setDetectingToken] = useState(false);
+  const [tokenPreview, setTokenPreview] = useState<{
+    name: string;
+    image: string | null;
+  } | null>(null);
 
   const [quotePreset, setQuotePreset] = useState<QuotePreset>("SOL");
   const [customQuoteMint, setCustomQuoteMint] = useState("");
   const [customQuoteDecimals, setCustomQuoteDecimals] = useState("6");
   const [quoteAmount, setQuoteAmount] = useState("");
+  const [quoteBalance, setQuoteBalance] = useState(0);
+
+  const [initialPrice, setInitialPrice] = useState("");
+  const [priceEditedManually, setPriceEditedManually] = useState(false);
 
   const [feeTiers, setFeeTiers] = useState<FeeTierOption[]>([]);
   const [selectedFeeTierId, setSelectedFeeTierId] = useState<string>("");
@@ -78,6 +95,118 @@ export default function CreatePoolForm() {
     quotePreset === "custom"
       ? Number(customQuoteDecimals)
       : QUOTE_PRESETS.find((p) => p.key === quotePreset)?.decimals ?? 9;
+  const quoteSymbol =
+    quotePreset === "custom"
+      ? "Token"
+      : QUOTE_PRESETS.find((p) => p.key === quotePreset)?.label ?? "";
+
+  // Pull wallet balances so the "Max" / "50%" quick-fill buttons work.
+  useEffect(() => {
+    if (!wallet.connected || !wallet.publicKey) return;
+    try {
+      // eslint-disable-next-line no-new
+      new PublicKey(baseMint.trim());
+    } catch {
+      setBaseBalance(0);
+      return;
+    }
+    getTokenBalance(connection, wallet.publicKey, baseMint.trim(), Number(baseDecimals) || 0)
+      .then(setBaseBalance)
+      .catch(() => setBaseBalance(0));
+  }, [wallet.connected, wallet.publicKey, baseMint, baseDecimals, connection]);
+
+  // Auto-detect the base token's symbol (and decimals) from its mint
+  // address, using on-chain Metaplex metadata. Only fills fields the user
+  // hasn't edited by hand, and is debounced so it doesn't fire on every
+  // keystroke while typing/pasting the address.
+  useEffect(() => {
+    const trimmed = baseMint.trim();
+    if (!trimmed) {
+      setTokenPreview(null);
+      return;
+    }
+    try {
+      // eslint-disable-next-line no-new
+      new PublicKey(trimmed);
+    } catch {
+      setTokenPreview(null);
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      setDetectingToken(true);
+      fetchTokenMetadata(connection, trimmed)
+        .then(async (info) => {
+          if (!info) {
+            setTokenPreview(null);
+            return;
+          }
+          if (!symbolEditedManually) {
+            setBaseSymbol(info.symbol || info.name || "");
+          }
+          if (!decimalsEditedManually) {
+            setBaseDecimals(String(info.decimals));
+          }
+          // Show the name immediately; resolve the logo (which needs a
+          // second, off-chain fetch) once it's ready.
+          setTokenPreview({ name: info.name || info.symbol, image: null });
+          if (info.uri) {
+            const image = await fetchTokenImage(info.uri);
+            setTokenPreview({ name: info.name || info.symbol, image });
+          }
+        })
+        .catch(() => setTokenPreview(null))
+        .finally(() => setDetectingToken(false));
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [baseMint, connection, symbolEditedManually, decimalsEditedManually]);
+
+  useEffect(() => {
+    if (!wallet.connected || !wallet.publicKey || !quoteMint) return;
+    try {
+      // eslint-disable-next-line no-new
+      new PublicKey(quoteMint);
+    } catch {
+      setQuoteBalance(0);
+      return;
+    }
+    getTokenBalance(connection, wallet.publicKey, quoteMint, quoteDecimals || 0)
+      .then(setQuoteBalance)
+      .catch(() => setQuoteBalance(0));
+  }, [wallet.connected, wallet.publicKey, quoteMint, quoteDecimals, connection]);
+
+  // Keep "Initial price" in sync with the two amounts, unless the user is
+  // typing directly into the price field.
+  useEffect(() => {
+    if (priceEditedManually) return;
+    const b = Number(baseAmount);
+    const q = Number(quoteAmount);
+    if (b > 0 && q > 0) {
+      setInitialPrice((q / b).toPrecision(6));
+    }
+  }, [baseAmount, quoteAmount, priceEditedManually]);
+
+  function handlePriceChange(value: string) {
+    setInitialPrice(value);
+    setPriceEditedManually(true);
+    const price = Number(value);
+    const b = Number(baseAmount);
+    if (price > 0 && b > 0) {
+      setQuoteAmount((price * b).toString());
+    }
+  }
+
+  function fillBaseAmount(fraction: number) {
+    if (baseBalance <= 0) return;
+    setBaseAmount((baseBalance * fraction).toString());
+  }
+
+  function fillQuoteAmount(fraction: number) {
+    if (quoteBalance <= 0) return;
+    setPriceEditedManually(false);
+    setQuoteAmount((quoteBalance * fraction).toString());
+  }
 
   function validate(): string | null {
     try {
@@ -138,6 +267,14 @@ export default function CreatePoolForm() {
         startTime: startMode === "custom" ? new Date(customStart) : null,
       });
       setResult(poolResult);
+      if (wallet.publicKey) {
+        recordPoolCreated(wallet.publicKey.toBase58(), {
+          poolId: poolResult.poolId,
+          baseSymbol: baseSymbol || "Base",
+          quoteSymbol: quoteSymbol || "Quote",
+          quoteAmount: Number(quoteAmount),
+        });
+      }
       toast.success("Liquidity pool created on Raydium!");
     } catch (err: any) {
       console.error(err);
@@ -280,32 +417,117 @@ export default function CreatePoolForm() {
           pool. Once created, it&apos;s public and permanent.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-4">
+        <p className="text-sm font-medium text-foreground">Initial liquidity</p>
+
+        {/* Base token */}
         <div className="space-y-1.5">
-          <Label>Base token</Label>
-          <div className="rounded-xl border border-border bg-background/40 p-3">
-            <Input
-              placeholder="Your token's mint address"
-              value={baseMint}
-              onChange={(e) => setBaseMint(e.target.value)}
-              className="mb-2 border-none bg-transparent px-0 focus-visible:ring-0"
-            />
-            <div className="flex gap-2">
+          <div className="flex items-center justify-between text-xs text-muted">
+            <span>Base token</span>
+            <span className="flex items-center gap-2">
+              <span>{baseBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+              <button
+                onClick={() => fillBaseAmount(1)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                Max
+              </button>
+              <button
+                onClick={() => fillBaseAmount(0.5)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                50%
+              </button>
+            </span>
+          </div>
+          <div className="divide-y divide-border/50 rounded-xl border border-border bg-background/40 p-3">
+            {/* Symbol + decimals */}
+            <div className="pb-2.5">
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-tide">
+                Token
+              </span>
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-tide-gradient text-xs font-bold text-background">
+                  {tokenPreview?.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={tokenPreview.image}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      onError={() =>
+                        setTokenPreview((prev) => (prev ? { ...prev, image: null } : prev))
+                      }
+                    />
+                  ) : (
+                    (baseSymbol || "?").slice(0, 1).toUpperCase()
+                  )}
+                </div>
+                <Input
+                  placeholder={detectingToken ? "Detecting..." : "Symbol (e.g. LUNA)"}
+                  value={baseSymbol}
+                  onChange={(e) => {
+                    setBaseSymbol(e.target.value);
+                    setSymbolEditedManually(true);
+                  }}
+                  className="w-32 border-none bg-transparent px-0 text-base font-semibold text-foreground focus-visible:ring-0"
+                />
+                <Input
+                  type="number"
+                  min={0}
+                  max={9}
+                  title="Decimals"
+                  value={baseDecimals}
+                  onChange={(e) => {
+                    setBaseDecimals(e.target.value);
+                    setDecimalsEditedManually(true);
+                  }}
+                  className="ml-auto w-16 text-right text-xs text-muted"
+                />
+              </div>
+            </div>
+
+            {/* Contract address */}
+            <div className="py-2.5">
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-violet-400">
+                Contract address
+              </span>
+              <Input
+                placeholder="Your token's mint address"
+                value={baseMint}
+                onChange={(e) => {
+                  setBaseMint(e.target.value);
+                  setSymbolEditedManually(false);
+                  setDecimalsEditedManually(false);
+                }}
+                className="border-none bg-transparent px-0 font-mono text-xs text-slate-300 focus-visible:ring-0"
+              />
+            </div>
+
+            {/* Detected token name */}
+            {tokenPreview?.name && (
+              <div className="py-2.5">
+                <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+                  Token name
+                </span>
+                <p className="truncate text-sm text-foreground">{tokenPreview.name}</p>
+              </div>
+            )}
+
+            {/* Amount */}
+            <div className="pt-2.5">
+              <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+                Amount to deposit
+              </span>
               <Input
                 type="number"
                 min={0}
                 placeholder="Amount, e.g. 500000"
                 value={baseAmount}
-                onChange={(e) => setBaseAmount(e.target.value)}
-              />
-              <Input
-                type="number"
-                min={0}
-                max={9}
-                title="Decimals"
-                value={baseDecimals}
-                onChange={(e) => setBaseDecimals(e.target.value)}
-                className="w-20"
+                onChange={(e) => {
+                  setBaseAmount(e.target.value);
+                  setPriceEditedManually(false);
+                }}
+                className="border-none bg-transparent px-0 text-right text-lg font-semibold text-foreground focus-visible:ring-0"
               />
             </div>
           </div>
@@ -317,8 +539,26 @@ export default function CreatePoolForm() {
           </div>
         </div>
 
+        {/* Quote token */}
         <div className="space-y-1.5">
-          <Label>Quote token</Label>
+          <div className="flex items-center justify-between text-xs text-muted">
+            <span>Quote token</span>
+            <span className="flex items-center gap-2">
+              <span>{quoteBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
+              <button
+                onClick={() => fillQuoteAmount(1)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                Max
+              </button>
+              <button
+                onClick={() => fillQuoteAmount(0.5)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                50%
+              </button>
+            </span>
+          </div>
           <div className="rounded-xl border border-border bg-background/40 p-3">
             <div className="mb-2 flex gap-2">
               {QUOTE_PRESETS.map((p) => (
@@ -326,12 +566,15 @@ export default function CreatePoolForm() {
                   key={p.key}
                   onClick={() => setQuotePreset(p.key)}
                   className={cn(
-                    "rounded-lg border px-3 py-1 text-xs font-medium",
+                    "flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium",
                     quotePreset === p.key
                       ? "border-tide bg-tide/10 text-tide"
                       : "border-border text-muted"
                   )}
                 >
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-card text-[9px]">
+                    {p.label.slice(0, 1)}
+                  </span>
                   {p.label}
                 </button>
               ))}
@@ -373,41 +616,55 @@ export default function CreatePoolForm() {
               step="0.000001"
               placeholder="Amount, e.g. 2.5"
               value={quoteAmount}
-              onChange={(e) => setQuoteAmount(e.target.value)}
+              onChange={(e) => {
+                setQuoteAmount(e.target.value);
+                setPriceEditedManually(false);
+              }}
+              className="border-none bg-transparent px-0 text-right text-lg font-semibold focus-visible:ring-0"
             />
           </div>
         </div>
 
+        {/* Initial price */}
         <div className="space-y-1.5">
           <Label>Initial price</Label>
-          <div className="rounded-xl border border-border bg-background/40 p-3 text-right font-mono text-sm text-muted">
-            {startingPrice
-              ? `1 base = ${startingPrice} quote`
-              : "Enter both amounts above"}
+          <div className="rounded-xl border border-border bg-background/40 p-3">
+            <Input
+              type="number"
+              min={0}
+              placeholder={`${quoteSymbol || "quote"}/${baseSymbol || "base"}`}
+              value={initialPrice}
+              onChange={(e) => handlePriceChange(e.target.value)}
+              className="border-none bg-transparent px-0 text-right font-mono focus-visible:ring-0"
+            />
           </div>
+          {startingPrice && (
+            <p className="text-xs text-muted">
+              Current price:{" "}
+              <span className="font-medium text-tide">
+                1 {baseSymbol || "base"} ≈ {startingPrice} {quoteSymbol || "quote"}
+              </span>
+            </p>
+          )}
         </div>
 
+        {/* Fee tier */}
         <div className="space-y-1.5">
           <Label>Fee tier</Label>
           {loadingFeeTiers ? (
             <p className="text-xs text-muted">Loading fee tiers from Raydium...</p>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <select
+              value={selectedFeeTierId}
+              onChange={(e) => setSelectedFeeTierId(e.target.value)}
+              className="w-full rounded-xl border border-border bg-background/40 p-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-tide"
+            >
               {feeTiers.map((tier) => (
-                <button
-                  key={tier.id}
-                  onClick={() => setSelectedFeeTierId(tier.id)}
-                  className={cn(
-                    "rounded-lg border px-3 py-2 text-left text-sm",
-                    selectedFeeTierId === tier.id
-                      ? "border-tide bg-tide/10 text-tide"
-                      : "border-border text-muted"
-                  )}
-                >
+                <option key={tier.id} value={tier.id}>
                   {formatFeeTierPercent(tier.tradeFeeRate)}
-                </button>
+                </option>
               ))}
-            </div>
+            </select>
           )}
         </div>
 
