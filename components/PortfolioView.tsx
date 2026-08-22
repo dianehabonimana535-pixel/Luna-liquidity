@@ -7,7 +7,7 @@ import { Minus, Plus, RefreshCw, Wallet } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getPoolSnapshot } from "@/lib/raydium";
-import { getHistory, getOpenPositions, type PortfolioPosition } from "@/lib/portfolio";
+import { getHistory, getOpenPositions, removePosition, type PortfolioPosition } from "@/lib/portfolio";
 import LiquidityModal from "@/components/LiquidityModal";
 
 const PAGE_SIZE = 5;
@@ -172,9 +172,21 @@ export default function PortfolioView() {
                         {p.quoteSymbol} - {p.baseSymbol}
                       </p>
                       {p.snapshotError ? (
-                        <p className="max-w-[220px] truncate text-xs text-rose-400" title={p.snapshotError}>
-                          Couldn't load value: {p.snapshotError}
-                        </p>
+                        <div>
+                          <p className="max-w-[220px] truncate text-xs text-rose-400" title={p.snapshotError}>
+                            Couldn't load value: {p.snapshotError}
+                          </p>
+                          <button
+                            onClick={() => {
+                              if (!wallet.publicKey) return;
+                              removePosition(wallet.publicKey.toBase58(), p.poolId);
+                              loadLedger();
+                            }}
+                            className="mt-0.5 text-[11px] text-muted underline hover:text-foreground"
+                          >
+                            Remove from list
+                          </button>
+                        </div>
                       ) : (
                         <p className="text-base font-semibold text-foreground">
                           {fmt(p.currentQuoteValue, 4)} {p.quoteSymbol}
