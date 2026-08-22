@@ -124,6 +124,13 @@ export function recordLiquidityRemoved(
   savePortfolio(walletAddress, positions);
 }
 
+/** Manually remove a position from the local ledger (e.g. a stale/broken
+ * entry from before a bug fix, whose on-chain pool can no longer be read). */
+export function removePosition(walletAddress: string, poolId: string) {
+  const positions = loadPortfolio(walletAddress).filter((p) => p.poolId !== poolId);
+  savePortfolio(walletAddress, positions);
+}
+
 /** Positions that still have an open (non-zero) share. */
 export function getOpenPositions(walletAddress: string): PortfolioPosition[] {
   return loadPortfolio(walletAddress).filter((p) => p.remainingPercent > 0);
@@ -135,3 +142,4 @@ export function getHistory(walletAddress: string): PortfolioPosition[] {
     .filter((p) => p.remainingPercent === 0)
     .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0));
 }
+
