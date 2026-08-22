@@ -15,6 +15,9 @@ const PAGE_SIZE = 5;
 interface LivePosition extends PortfolioPosition {
   /** Current value in quote-token units, refreshed from live pool data. */
   currentQuoteValue: number | null;
+  /** Set if the live refresh for this position failed, so the UI can show
+   * the real reason instead of silently getting stuck on "...". */
+  snapshotError: string | null;
 }
 
 export default function PortfolioView() {
@@ -32,7 +35,13 @@ export default function PortfolioView() {
   const loadLedger = useCallback(() => {
     if (!wallet.publicKey) return;
     const address = wallet.publicKey.toBase58();
-    setPositions(getOpenPositions(address).map((p) => ({ ...p, currentQuoteValue: null })));
+    setPositions(
+      getOpenPositions(address).map((p) => ({
+        ...p,
+        currentQuoteValue: null,
+        snapshotError: null,
+      }))
+    );
     setHistory(getHistory(address));
   }, [wallet.publicKey]);
 
@@ -59,9 +68,14 @@ export default function PortfolioView() {
         positions.map(async (p) => {
           try {
             const snap = await getPoolSnapshot(wallet, connection, p.poolId);
-            return { ...p, currentQuoteValue: snap.userValueInQuote };
-          } catch {
-            return { ...p, currentQuoteValue: null };
+            return { ...p, currentQuoteValue: snap.userValueInQuote, snapshotError: null };
+          } catch (err: any) {
+            console.error(`getPoolSnapshot failed for pool ${p.poolId}:`, err);
+            return {
+              ...p,
+              currentQuoteValue: null,
+              snapshotError: err?.message ? String(err.message) : "Unknown error",
+            };
           }
         })
       );
@@ -157,15 +171,27 @@ export default function PortfolioView() {
                       <p className="text-sm font-medium text-foreground">
                         {p.quoteSymbol} - {p.baseSymbol}
                       </p>
-                      <p className="text-xs text-muted">
-                        {fmt(p.currentQuoteValue, 6)} {p.quoteSymbol}
-                        {pnl !== null && (
-                          <span className={pnl >= 0 ? "ml-1.5 text-tide" : "ml-1.5 text-rose-400"}>
-                            {pnl >= 0 ? "+" : ""}
-                            {fmt(pnl, 6)}
-                          </span>
-                        )}
-                      </p>
+                      {p.snapshotError ? (
+                        <p className="max-w-[220px] truncate text-xs text-rose-400" title={p.snapshotError}>
+                          Couldn't load value: {p.snapshotError}
+                        </p>
+                      ) : (
+                        <p className="text-base font-semibold text-foreground">
+                          {fmt(p.currentQuoteValue, 4)} {p.quoteSymbol}
+                          {pnl !== null && (
+                            <span
+                              className={
+                                pnl >= 0
+                                  ? "ml-1.5 text-xs font-medium text-tide"
+                                  : "ml-1.5 text-xs font-medium text-rose-400"
+                              }
+                            >
+                              {pnl >= 0 ? "+" : ""}
+                              {fmt(pnl, 4)}
+                            </span>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex gap-2">
@@ -262,3 +288,4 @@ export default function PortfolioView() {
     </div>
   );
 }
+
