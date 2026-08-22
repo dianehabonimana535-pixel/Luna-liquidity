@@ -7,9 +7,21 @@ import {
   TxVersion,
   CREATE_CPMM_POOL_PROGRAM,
   CREATE_CPMM_POOL_FEE_ACC,
+  DEVNET_PROGRAM_ID,
   Percent,
 } from "@raydium-io/raydium-sdk-v2";
 import BN from "bn.js";
+import { SOLANA_CLUSTER } from "./network";
+
+// Raydium's on-chain CPMM program (and its fee-collection account) has a
+// DIFFERENT address on devnet than on mainnet - using the wrong one means
+// every transaction fails during simulation, before anything is even sent
+// to the network (so it looks like "nothing happens", not even fees).
+// See: https://docs.raydium.io/reference/program-addresses
+const CPMM_PROGRAM_ID =
+  SOLANA_CLUSTER === "devnet" ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM : CREATE_CPMM_POOL_PROGRAM;
+const CPMM_FEE_ACC =
+  SOLANA_CLUSTER === "devnet" ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_FEE_ACC : CREATE_CPMM_POOL_FEE_ACC;
 
 // Native SOL "mint" address, offered as one of the quote token presets.
 export const NATIVE_SOL_MINT = "So11111111111111111111111111111111111111112";
@@ -140,6 +152,20 @@ async function loadRaydium(wallet: WalletContextState, connection: Connection) {
     connection,
     owner: wallet.publicKey,
     signAllTransactions: wallet.signAllTransactions,
+    cluster: SOLANA_CLUSTER,
+    // Route the SDK's own API calls (fee-tier configs, pool lookups, etc.)
+    // to Raydium's devnet endpoints too - otherwise raydium.api.* calls
+    // silently return mainnet data, e.g. fee-tier IDs that don't exist as
+    // accounts on devnet, which also breaks pool creation there.
+    ...(SOLANA_CLUSTER === "devnet"
+      ? {
+          urlConfigs: {
+            BASE_HOST: "https://api-v3-devnet.raydium.io",
+            OWNER_BASE_HOST: "https://owner-v1-devnet.raydium.io",
+            SWAP_HOST: "https://transaction-v1-devnet.raydium.io",
+          },
+        }
+      : {}),
   });
 }
 
@@ -276,8 +302,8 @@ export async function createPool(params: CreatePoolParams): Promise<CreatePoolRe
     : new BN(0);
 
   const { execute, extInfo } = await raydium.cpmm.createPool({
-    programId: CREATE_CPMM_POOL_PROGRAM,
-    poolFeeAccount: CREATE_CPMM_POOL_FEE_ACC,
+    programId: CPMM_PROGRAM_ID,
+    poolFeeAccount: CPMM_FEE_ACC,
     mintA,
     mintB,
     mintAAmount,
@@ -485,3 +511,4 @@ export async function getPoolSnapshot(
     userValueInQuote,
   };
 }
+
