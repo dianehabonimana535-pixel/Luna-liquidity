@@ -483,18 +483,35 @@ export async function getPoolSnapshot(
     throw new Error(`[step 1/4 loadRaydium] ${err?.message || err}`);
   }
 
-  let poolInfo: any;
+  // Use the raw, RPC-only pool reader (no config/fee-tier enrichment call,
+  // which depends on Raydium's API and isn't reliably available for
+  // devnet pools) instead of getPoolInfoFromRpc(), which wraps this AND an
+  // extra enrichment step.
+  let rpc: any;
   try {
-    const res = await raydium.cpmm.getPoolInfoFromRpc(poolId);
-    poolInfo = res.poolInfo;
+    rpc = await raydium.cpmm.getRpcPoolInfo(poolId, false);
   } catch (err: any) {
-    throw new Error(`[step 2/4 getPoolInfoFromRpc] ${err?.message || err}`);
+    throw new Error(`[step 2/4 getRpcPoolInfo] ${err?.message || err}`);
   }
-  const info: any = poolInfo;
 
-  const baseReserve = Number(info.mintAmountA ?? 0);
-  const quoteReserve = Number(info.mintAmountB ?? 0);
-  const lpSupply = new BN(Math.round(Number(info.lpAmount ?? 0) * 10 ** (info.lpMint?.decimals ?? 9)).toString());
+  // Defensive extraction: alpha SDK, field names aren't 100% guaranteed
+  // across versions. If the expected numeric fields aren't there, surface
+  // exactly what keys ARE present instead of silently returning 0/NaN.
+  const baseReserveRaw = rpc.baseReserve ?? rpc.vaultAAmount ?? rpc.vaultA?.amount;
+  const quoteReserveRaw = rpc.quoteReserve ?? rpc.vaultBAmount ?? rpc.vaultB?.amount;
+  const lpSupplyRaw = rpc.lpAmount ?? rpc.lpSupply;
+  const mintDecimalA = rpc.mintDecimalA ?? rpc.mintA?.decimals ?? 9;
+  const mintDecimalB = rpc.mintDecimalB ?? rpc.mintB?.decimals ?? 9;
+
+  if (baseReserveRaw === undefined || quoteReserveRaw === undefined || lpSupplyRaw === undefined) {
+    throw new Error(
+      `[step 2b/4 getRpcPoolInfo] unexpected shape, available keys: ${Object.keys(rpc).join(", ")}`
+    );
+  }
+
+  const baseReserve = Number(baseReserveRaw.toString()) / 10 ** mintDecimalA;
+  const quoteReserve = Number(quoteReserveRaw.toString()) / 10 ** mintDecimalB;
+  const lpSupply = new BN(lpSupplyRaw.toString());
 
   let tokenAccounts;
   try {
@@ -503,7 +520,7 @@ export async function getPoolSnapshot(
   } catch (err: any) {
     throw new Error(`[step 3/4 fetchWalletTokenAccounts] ${err?.message || err}`);
   }
-  const lpMintAddress = info.lpMint?.address;
+  const lpMintAddress: string | undefined = rpc.mintLp?.toBase58?.() ?? rpc.lpMint?.toBase58?.();
   const lpAccount = tokenAccounts.find((acc: any) => acc.mint.toBase58() === lpMintAddress);
   const userLpAmount = lpAccount?.amount ?? new BN(0);
 
@@ -516,12 +533,12 @@ export async function getPoolSnapshot(
 
   return {
     poolId,
-    baseMint: info.mintA?.address ?? "",
-    baseSymbol: info.mintA?.symbol || "Base",
-    baseDecimals: info.mintA?.decimals ?? 9,
-    quoteMint: info.mintB?.address ?? "",
-    quoteSymbol: info.mintB?.symbol || "Quote",
-    quoteDecimals: info.mintB?.decimals ?? 9,
+    baseMint: rpc.mintA?.toBase58?.() ?? "",
+    baseSymbol: "Base",
+    baseDecimals: mintDecimalA,
+    quoteMint: rpc.mintB?.toBase58?.() ?? "",
+    quoteSymbol: "Quote",
+    quoteDecimals: mintDecimalB,
     baseReserve,
     quoteReserve,
     userLpAmount,
