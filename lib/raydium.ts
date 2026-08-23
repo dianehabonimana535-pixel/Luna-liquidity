@@ -497,20 +497,30 @@ export async function getPoolSnapshot(
   // Defensive extraction: alpha SDK, field names aren't 100% guaranteed
   // across versions. If the expected numeric fields aren't there, surface
   // exactly what keys ARE present instead of silently returning 0/NaN.
-  const baseReserveRaw = rpc.baseReserve ?? rpc.vaultAAmount ?? rpc.vaultA?.amount;
-  const quoteReserveRaw = rpc.quoteReserve ?? rpc.vaultBAmount ?? rpc.vaultB?.amount;
+  const reserveARaw = rpc.baseReserve ?? rpc.vaultAAmount ?? rpc.vaultA?.amount;
+  const reserveBRaw = rpc.quoteReserve ?? rpc.vaultBAmount ?? rpc.vaultB?.amount;
   const lpSupplyRaw = rpc.lpAmount ?? rpc.lpSupply;
-  const mintDecimalA = rpc.mintDecimalA ?? rpc.mintA?.decimals ?? 9;
-  const mintDecimalB = rpc.mintDecimalB ?? rpc.mintB?.decimals ?? 9;
+  const decimalsA = rpc.mintDecimalA ?? rpc.mintA?.decimals ?? 9;
+  const decimalsB = rpc.mintDecimalB ?? rpc.mintB?.decimals ?? 9;
 
-  if (baseReserveRaw === undefined || quoteReserveRaw === undefined || lpSupplyRaw === undefined) {
+  if (reserveARaw === undefined || reserveBRaw === undefined || lpSupplyRaw === undefined) {
     throw new Error(
       `[step 2b/4 getRpcPoolInfo] unexpected shape, available keys: ${Object.keys(rpc).join(", ")}`
     );
   }
 
-  const baseReserve = Number(baseReserveRaw.toString()) / 10 ** mintDecimalA;
-  const quoteReserve = Number(quoteReserveRaw.toString()) / 10 ** mintDecimalB;
+  const reserveAHuman = Number(reserveARaw.toString()) / 10 ** decimalsA;
+  const reserveBHuman = Number(reserveBRaw.toString()) / 10 ** decimalsB;
+
+  // IMPORTANT: Solana AMM pools canonicalize which mint is stored as "A"
+  // vs "B" by comparing the two mint addresses - NOT by which one the
+  // caller happened to label "base"/"quote" when creating the pool. So we
+  // can't assume mintA=base here; instead, whichever side is native SOL
+  // (the common case for this app) is treated as the quote side.
+  const mintAAddress: string = rpc.mintA?.toBase58?.() ?? "";
+  const mintIsQuoteA = mintAAddress === NATIVE_SOL_MINT;
+  const baseReserve = mintIsQuoteA ? reserveBHuman : reserveAHuman;
+  const quoteReserve = mintIsQuoteA ? reserveAHuman : reserveBHuman;
   const lpSupply = new BN(lpSupplyRaw.toString());
 
   let tokenAccounts;
@@ -533,12 +543,12 @@ export async function getPoolSnapshot(
 
   return {
     poolId,
-    baseMint: rpc.mintA?.toBase58?.() ?? "",
+    baseMint: mintIsQuoteA ? rpc.mintB?.toBase58?.() ?? "" : mintAAddress,
     baseSymbol: "Base",
-    baseDecimals: mintDecimalA,
-    quoteMint: rpc.mintB?.toBase58?.() ?? "",
+    baseDecimals: mintIsQuoteA ? decimalsB : decimalsA,
+    quoteMint: mintIsQuoteA ? mintAAddress : rpc.mintB?.toBase58?.() ?? "",
     quoteSymbol: "Quote",
-    quoteDecimals: mintDecimalB,
+    quoteDecimals: mintIsQuoteA ? decimalsA : decimalsB,
     baseReserve,
     quoteReserve,
     userLpAmount,
