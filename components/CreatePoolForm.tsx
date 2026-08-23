@@ -21,7 +21,7 @@ import {
   USDC_MINT,
   type FeeTierOption,
 } from "@/lib/raydium";
-import { solscanAddressUrl } from "@/lib/network";
+import { explorerTxUrl, solscanAddressUrl } from "@/lib/network";
 import { recordPoolCreated } from "@/lib/portfolio";
 import { cn, shortenAddress } from "@/lib/utils";
 
@@ -71,6 +71,10 @@ export default function CreatePoolForm() {
   const [result, setResult] = useState<{ poolId: string; signature: string } | null>(
     null
   );
+  // Bumped after a successful create/deposit so the balance-fetching
+  // effects below re-run and show the post-transaction amounts, instead of
+  // staying stuck on the values from before the transaction.
+  const [balanceRefreshKey, setBalanceRefreshKey] = useState(0);
 
   useEffect(() => {
     if (!poolTypeConfirmed || !wallet.connected) return;
@@ -113,7 +117,7 @@ export default function CreatePoolForm() {
     getTokenBalance(connection, wallet.publicKey, baseMint.trim(), Number(baseDecimals) || 0)
       .then(setBaseBalance)
       .catch(() => setBaseBalance(0));
-  }, [wallet.connected, wallet.publicKey, baseMint, baseDecimals, connection]);
+  }, [wallet.connected, wallet.publicKey, baseMint, baseDecimals, connection, balanceRefreshKey]);
 
   // Auto-detect the base token's symbol (and decimals) from its mint
   // address, using on-chain Metaplex metadata. Only fills fields the user
@@ -174,7 +178,7 @@ export default function CreatePoolForm() {
     getTokenBalance(connection, wallet.publicKey, quoteMint, quoteDecimals || 0)
       .then(setQuoteBalance)
       .catch(() => setQuoteBalance(0));
-  }, [wallet.connected, wallet.publicKey, quoteMint, quoteDecimals, connection]);
+  }, [wallet.connected, wallet.publicKey, quoteMint, quoteDecimals, connection, balanceRefreshKey]);
 
   // Keep "Initial price" in sync with the two amounts, unless the user is
   // typing directly into the price field.
@@ -267,6 +271,10 @@ export default function CreatePoolForm() {
         startTime: startMode === "custom" ? new Date(customStart) : null,
       });
       setResult(poolResult);
+      // Force the "Base token" / "Quote token" balance displays to refetch
+      // now that the deposit has gone through - otherwise they'd keep
+      // showing the pre-transaction amounts until the page is reloaded.
+      setBalanceRefreshKey((k) => k + 1);
       if (wallet.publicKey) {
         recordPoolCreated(wallet.publicKey.toBase58(), {
           poolId: poolResult.poolId,
@@ -315,6 +323,22 @@ export default function CreatePoolForm() {
               {shortenAddress(result.poolId, 8)}
             </p>
           </button>
+          <button
+            onClick={() => copy(result.signature)}
+            className="w-full space-y-1.5 rounded-xl border border-border bg-background/40 p-4 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-xs text-muted">
+              Transaction signature <Copy className="h-3 w-3" />
+            </span>
+            <p className="break-all font-mono text-sm text-foreground">
+              {shortenAddress(result.signature, 8)}
+            </p>
+          </button>
+          <Button asChild variant="outline" className="w-full">
+            <a href={explorerTxUrl(result.signature)} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" /> View transaction on Explorer
+            </a>
+          </Button>
           <Button asChild variant="outline" className="w-full">
             <a href={solscanAddressUrl(result.poolId)} target="_blank" rel="noreferrer">
               <ExternalLink className="h-4 w-4" /> View pool on Solscan
@@ -723,3 +747,4 @@ export default function CreatePoolForm() {
     </Card>
   );
 }
+
