@@ -47,7 +47,7 @@ export function explorerTxUrl(signature: string): string {
 }
 
 export function solscanAddressUrl(address: string): string {
-  return withCluster(`https://solscan.io/token/${address}`);
+  return withCluster(`https://solscan.io/account/${address}`);
 }
 
 export function solscanTxUrl(signature: string): string {
