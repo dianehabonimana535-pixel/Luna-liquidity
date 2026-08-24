@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { toast } from "sonner";
-import { Minus, Plus, RefreshCw, Wallet } from "lucide-react";
+import { ExternalLink, Minus, Plus, RefreshCw, Wallet } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { getPoolSnapshot } from "@/lib/raydium";
 import { getHistory, getOpenPositions, removePosition, type PortfolioPosition } from "@/lib/portfolio";
+import { dexscreenerPoolUrl } from "@/lib/network";
+import { shortenAddress } from "@/lib/utils";
 import LiquidityModal from "@/components/LiquidityModal";
 
 const PAGE_SIZE = 5;
@@ -15,6 +17,9 @@ const PAGE_SIZE = 5;
 interface LivePosition extends PortfolioPosition {
   /** Current value in quote-token units, refreshed from live pool data. */
   currentQuoteValue: number | null;
+  /** The user's own pooled amount of each side, refreshed from live pool data. */
+  currentBaseAmount: number | null;
+  currentQuoteAmount: number | null;
   /** Set if the live refresh for this position failed, so the UI can show
    * the real reason instead of silently getting stuck on "...". */
   snapshotError: string | null;
@@ -39,6 +44,8 @@ export default function PortfolioView() {
       getOpenPositions(address).map((p) => ({
         ...p,
         currentQuoteValue: null,
+        currentBaseAmount: null,
+        currentQuoteAmount: null,
         snapshotError: null,
       }))
     );
@@ -68,12 +75,20 @@ export default function PortfolioView() {
         positions.map(async (p) => {
           try {
             const snap = await getPoolSnapshot(wallet, connection, p.poolId);
-            return { ...p, currentQuoteValue: snap.userValueInQuote, snapshotError: null };
+            return {
+              ...p,
+              currentQuoteValue: snap.userValueInQuote,
+              currentBaseAmount: snap.userBaseAmount,
+              currentQuoteAmount: snap.userQuoteAmount,
+              snapshotError: null,
+            };
           } catch (err: any) {
             console.error(`getPoolSnapshot failed for pool ${p.poolId}:`, err);
             return {
               ...p,
               currentQuoteValue: null,
+              currentBaseAmount: null,
+              currentQuoteAmount: null,
               snapshotError: err?.message ? String(err.message) : "Unknown error",
             };
           }
@@ -156,70 +171,103 @@ export default function PortfolioView() {
               return (
                 <div
                   key={p.poolId}
-                  className="flex items-center justify-between rounded-xl border border-border bg-background/40 p-3"
+                  className="rounded-xl border border-border bg-background/40 p-3"
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="flex -space-x-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-tide-gradient text-[10px] font-bold text-background">
-                        {p.quoteSymbol.slice(0, 1)}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex -space-x-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-tide-gradient text-[10px] font-bold text-background">
+                          {p.quoteSymbol.slice(0, 1)}
+                        </div>
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-moonlight text-[10px] font-bold text-background">
+                          {p.baseSymbol.slice(0, 1)}
+                        </div>
                       </div>
-                      <div className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-card bg-moonlight text-[10px] font-bold text-background">
-                        {p.baseSymbol.slice(0, 1)}
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {p.quoteSymbol}-{p.baseSymbol}
+                        </p>
+                        <p className="font-mono text-[11px] text-muted">
+                          {shortenAddress(p.poolId, 4)}
+                        </p>
                       </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-foreground">
-                        {p.quoteSymbol} - {p.baseSymbol}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setModal({ poolId: p.poolId, mode: "withdraw" })}
+                        className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted hover:text-foreground"
+                        title="Withdraw"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setModal({ poolId: p.poolId, mode: "add" })}
+                        className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted hover:text-foreground"
+                        title="Add liquidity"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                      <a
+                        href={dexscreenerPoolUrl(p.poolId)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 rounded-full border border-tide/40 px-2.5 py-1 text-[11px] font-medium text-tide hover:bg-tide/10"
+                      >
+                        <ExternalLink className="h-3 w-3" /> Dexscreener
+                      </a>
+                    </div>
+                  </div>
+
+                  {p.snapshotError ? (
+                    <div className="mt-2">
+                      <p className="whitespace-normal break-words text-xs text-rose-400">
+                        Couldn't load value: {p.snapshotError}
                       </p>
-                      {p.snapshotError ? (
-                        <div>
-                          <p className="whitespace-normal break-words text-xs text-rose-400">
-                            Couldn't load value: {p.snapshotError}
-                          </p>
-                          <button
-                            onClick={() => {
-                              if (!wallet.publicKey) return;
-                              removePosition(wallet.publicKey.toBase58(), p.poolId);
-                              loadLedger();
-                            }}
-                            className="mt-0.5 text-[11px] text-muted underline hover:text-foreground"
-                          >
-                            Remove from list
-                          </button>
-                        </div>
-                      ) : (
-                        <p className="text-base font-semibold text-foreground">
+                      <button
+                        onClick={() => {
+                          if (!wallet.publicKey) return;
+                          removePosition(wallet.publicKey.toBase58(), p.poolId);
+                          loadLedger();
+                        }}
+                        className="mt-0.5 text-[11px] text-muted underline hover:text-foreground"
+                      >
+                        Remove from list
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      <div className="rounded-lg bg-card/60 p-2">
+                        <p className="text-[10px] uppercase text-muted">Pooled {p.quoteSymbol}</p>
+                        <p className="mt-0.5 text-sm font-semibold text-foreground">
+                          {fmt(p.currentQuoteAmount, 4)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-card/60 p-2">
+                        <p className="text-[10px] uppercase text-muted">Pooled {p.baseSymbol}</p>
+                        <p className="mt-0.5 text-sm font-semibold text-foreground">
+                          {fmt(p.currentBaseAmount, 4)}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-card/60 p-2">
+                        <p className="text-[10px] uppercase text-muted">Est. value</p>
+                        <p className="mt-0.5 text-sm font-semibold text-foreground">
                           {fmt(p.currentQuoteValue, 4)} {p.quoteSymbol}
                           {pnl !== null && (
                             <span
                               className={
                                 pnl >= 0
-                                  ? "ml-1.5 text-xs font-medium text-tide"
-                                  : "ml-1.5 text-xs font-medium text-rose-400"
+                                  ? "ml-1 text-[11px] font-medium text-tide"
+                                  : "ml-1 text-[11px] font-medium text-rose-400"
                               }
                             >
                               {pnl >= 0 ? "+" : ""}
-                              {fmt(pnl, 4)}
+                              {fmt(pnl, 2)}
                             </span>
                           )}
                         </p>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setModal({ poolId: p.poolId, mode: "withdraw" })}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted hover:text-foreground"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => setModal({ poolId: p.poolId, mode: "add" })}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-muted hover:text-foreground"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  )}
                 </div>
               );
             })
@@ -300,4 +348,3 @@ export default function PortfolioView() {
     </div>
   );
 }
-
