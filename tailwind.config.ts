@@ -5,14 +5,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "#0B1220",
-        card: "#1E2A4A",
-        border: "#2A3A5C",
+        background: "#0A0A0B",
+        card: "#151517",
+        border: "#26262A",
         moonlight: "#8FB8DE",
-        tide: "#2DD4BF",
-        foreground: "#F5EFE0",
-        muted: "#9AAAC7",
-        coral: "#FF6B6B",
+        tide: "#7CFFB2",
+        foreground: "#F2F2F0",
+        muted: "#9A9AA2",
+        coral: "#FF5C5C",
       },
       fontFamily: {
         display: ["var(--font-fraunces)", "serif"],
@@ -20,7 +20,7 @@ const config: Config = {
         mono: ["var(--font-plex-mono)", "monospace"],
       },
       backgroundImage: {
-        "tide-gradient": "linear-gradient(90deg, #8FB8DE 0%, #2DD4BF 100%)",
+        "tide-gradient": "linear-gradient(90deg, #9FFFC8 0%, #4ADE80 100%)",
       },
     },
   },
