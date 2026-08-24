@@ -54,5 +54,10 @@ export function solscanTxUrl(signature: string): string {
   return withCluster(`https://solscan.io/tx/${signature}`);
 }
 
-export const SITE_URL = "https://luna-liquidity.vercel.app";
+/** Dexscreener has no separate devnet site - this link only resolves for
+ * pools that are actually live on mainnet. */
+export function dexscreenerPoolUrl(poolId: string): string {
+  return `https://dexscreener.com/solana/${poolId}`;
+}
 
+export const SITE_URL = "https://luna-liquidity.vercel.app";
