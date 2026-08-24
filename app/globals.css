@@ -7,8 +7,8 @@ html {
 }
 
 body {
-  background-color: #0b1220;
-  color: #f5efe0;
+  background-color: #0a0a0b;
+  color: #f2f2f0;
 }
 
 /* Signature element: a slow-moving tide line that drifts behind the hero,
@@ -59,16 +59,16 @@ body {
 .tide-gauge-fill {
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, #8fb8de 0%, #2dd4bf 100%);
+  background: linear-gradient(90deg, #9fffc8 0%, #4ade80 100%);
   transition: width 0.6s ease;
 }
 
 ::selection {
-  background: #2dd4bf;
-  color: #0b1220;
+  background: #7cffb2;
+  color: #0a0a0b;
 }
 
 :focus-visible {
-  outline: 2px solid #2dd4bf;
+  outline: 2px solid #7cffb2;
   outline-offset: 2px;
 }
