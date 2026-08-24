@@ -451,16 +451,22 @@ export default function CreatePoolForm() {
             <span className="flex items-center gap-2">
               <span>{baseBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
               <button
-                onClick={() => fillBaseAmount(1)}
-                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
-              >
-                Max
-              </button>
-              <button
                 onClick={() => fillBaseAmount(0.5)}
                 className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
               >
                 50%
+              </button>
+              <button
+                onClick={() => fillBaseAmount(0.9)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                90%
+              </button>
+              <button
+                onClick={() => fillBaseAmount(1)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                Max
               </button>
             </span>
           </div>
@@ -570,16 +576,22 @@ export default function CreatePoolForm() {
             <span className="flex items-center gap-2">
               <span>{quoteBalance.toLocaleString(undefined, { maximumFractionDigits: 4 })}</span>
               <button
-                onClick={() => fillQuoteAmount(1)}
-                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
-              >
-                Max
-              </button>
-              <button
                 onClick={() => fillQuoteAmount(0.5)}
                 className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
               >
                 50%
+              </button>
+              <button
+                onClick={() => fillQuoteAmount(0.9)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                90%
+              </button>
+              <button
+                onClick={() => fillQuoteAmount(1)}
+                className="rounded-md bg-card px-1.5 py-0.5 font-medium text-muted hover:text-tide"
+              >
+                Max
               </button>
             </span>
           </div>
@@ -740,11 +752,12 @@ export default function CreatePoolForm() {
           {!wallet.connected
             ? "Connect wallet to continue"
             : loading
-            ? "Initializing pool..."
-            : "Initialize Liquidity Pool"}
+            ? "Creating pool..."
+            : "Create Pool"}
         </Button>
       </CardContent>
     </Card>
   );
 }
+
 
