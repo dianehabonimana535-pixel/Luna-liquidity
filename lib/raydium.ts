@@ -461,6 +461,10 @@ export interface PoolSnapshot {
    * (especially devnet) tokens.
    */
   userValueInQuote: number;
+  /** The caller's own share of each side of the pool, in human (UI) units
+   * (e.g. "0.2000 SOL" / "900.00M TOKEN" pooled). */
+  userBaseAmount: number;
+  userQuoteAmount: number;
 }
 
 /**
@@ -540,6 +544,8 @@ export async function getPoolSnapshot(
   // In a constant-product pool both sides hold equal value, so the pool's
   // total value in quote-token units is simply 2x the quote reserve.
   const userValueInQuote = userShare * quoteReserve * 2;
+  const userBaseAmount = userShare * baseReserve;
+  const userQuoteAmount = userShare * quoteReserve;
 
   return {
     poolId,
@@ -554,6 +560,7 @@ export async function getPoolSnapshot(
     userLpAmount,
     lpSupply,
     userValueInQuote,
+    userBaseAmount,
+    userQuoteAmount,
   };
 }
-
